@@ -95,6 +95,7 @@ setup(
             'recon=swift.common.middleware.recon:filter_factory',
             'tempurl=swift.common.middleware.tempurl:filter_factory',
             'formpost=swift.common.middleware.formpost:filter_factory',
+            'cors=swift.common.middleware.cors:filter_factory',
             ],
         },
     )
