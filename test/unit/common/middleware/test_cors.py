@@ -149,7 +149,8 @@ class TestCORSMiddleware(unittest.TestCase):
         conf = {'local_origin': self.local_origin,
                 'allow_origins': 'http://bar.com',
                 'allow_methods': 'GET,PUT',
-                'allow_headers': 'X-Custom1,X-Custom2'}
+                'allow_headers': 'X-Custom1,X-Custom2',
+                'expose_headers': 'X-Custom3,X-Custom4'}
         app = cors.filter_factory({}, **conf)(self.fake_app)
         environ = {'REQUEST_METHOD': 'GET'}
         headers = {'Origin': conf['allow_origins'],
@@ -162,7 +163,7 @@ class TestCORSMiddleware(unittest.TestCase):
         self.assertEquals(conf['allow_origins'],
             resp.headers['Access-Control-Allow-Origin'])
         self.assertIn('Access-Control-Expose-Headers', resp.headers)
-        self.assertEquals(conf['allow_headers'].lower(),
+        self.assertEquals(conf['expose_headers'].lower(),
             resp.headers['Access-Control-Expose-Headers'])
 
     def test_asterisk_origin(self):
