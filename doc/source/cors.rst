@@ -5,12 +5,26 @@ CORS
 CORS_ is a mechanisim to allow code running in a browser (Javascript for
 example) make requests to a domain other then the one from where it originated.
 
-Swift supports CORS requests to containers and objects.
+Swift supports CORS requests to containers, objects and the TempAuth auth
+system (to retrieve a token).
 
 CORS metadata is held on the container only. The values given apply to the
 container itself and all objects within it.
 
-The supported headers are,
+--------------
+Configuration
+--------------
+
+======================== =========  ===========================================
+Option                   Default     Description
+------------------------ ---------  -------------------------------------------
+cors_allow_origin        ''         Comma delimited list of origins. Use * to
+                                    indicate all origins. Used by tempauth and
+                                    in addition to origins specified on
+                                    containers.
+======================== =========  ===========================================
+
+The supported container headers are,
 
 +---------------------------------------------+-------------------------------+
 |Metadata                                      | Use                          |
@@ -32,6 +46,9 @@ The supported headers are,
 |                                              | Space separated.             |
 +----------------------------------------------+------------------------------+
 
+----------------------
+Requests to Containers
+----------------------
 Before a browser issues an actual request it may issue a `preflight request`_.
 The preflight request is an OPTIONS call to verify the Origin is allowed to
 make the request. The sequence of events are,
@@ -52,7 +69,6 @@ returns the following values for this header,
   ``X-Object-Meta-*`` for objects)
 * headers listed in ``X-Container-Meta-Access-Control-Expose-Headers``
 
-
 -----------------
 Sample Javascript
 -----------------
@@ -60,6 +76,9 @@ Sample Javascript
 To see some CORS Javascript in action download the `test CORS page`_ (source
 below). Host it on a webserver and take note of the protocol and hostname
 (origin) you'll be using to request the page, e.g. http://localhost.
+
+If you're using Tempauth and want to request a token using CORS, include your
+origin in the ``cors_allow_origin`` setting in the proxy server config file.
 
 Locate a container you'd like to query. Needless to say the Swift cluster
 hosting this container should have CORS support. Append the origin of the
@@ -73,7 +92,7 @@ header,::
 At this point the container is now accessible to CORS clients hosted on
 http://localhost. Open the test CORS page in your browser.
 
-#. Populate the Token field
+#. Request a token or populate the Token field
 #. Populate the URL field with the URL of either a container or object
 #. Select the request method
 #. Hit Submit
@@ -96,6 +115,16 @@ Test CORS Page
       </head>
       <body>
 
+        <h2>Get Token - Tempauth</h2>
+        Account:User<br><input id="user" type="text" size="32" value="test:tester"><br><br>
+        Password<br><input id="password" type="text" size="32" value="testing"><br><br>
+        Auth URL<br><input id="auth_url" size="64" type="text" value="http://192.168.56.3:8080/auth/v1.0"><br><br>
+
+        <input id="submit" type="button" value="Submit" onclick="tempauth_gettoken()">
+
+        <pre id="auth_response_message" style="color: red"></pre>
+
+        <h2>Container/Object Request</h2>
         Token<br><input id="token" type="text" size="64"><br><br>
 
         Method<br>
@@ -117,6 +146,33 @@ Test CORS Page
         <pre id="response_body"></pre>
 
         <script type="text/javascript">
+          function tempauth_gettoken() {
+              document.getElementById('token').value = null;
+              document.getElementById('auth_response_message').textContent = null;
+
+              var user = document.getElementById('user').value;
+              var password = document.getElementById('password').value;
+              var auth_url = document.getElementById('auth_url').value;
+
+              var request = new XMLHttpRequest();
+
+              request.onreadystatechange = function (oEvent) {
+                  if (request.readyState == 4) {
+                      if (request.status == 200) {
+                          document.getElementById('token').value = request.getResponseHeader('X-Auth-Token');
+                          document.getElementById('url').value = request.getResponseHeader('X-Storage-Url') + '/[container/object name here]';
+                      } else {
+                          document.getElementById('auth_response_message').textContent = request.statusText || "Problem authenticating";
+                      }
+                  }
+              }
+
+              request.open('GET', auth_url);
+              request.setRequestHeader('X-Auth-User', user);
+              request.setRequestHeader('X-Auth-Key', password);
+              request.send(null);
+          }
+
           function submit() {
               var token = document.getElementById('token').value;
               var method = document.getElementById('method').value;

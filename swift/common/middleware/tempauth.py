@@ -24,7 +24,7 @@ import base64
 from eventlet import Timeout
 from swift.common.swob import Response, Request
 from swift.common.swob import HTTPBadRequest, HTTPForbidden, HTTPNotFound, \
-    HTTPUnauthorized
+    HTTPUnauthorized, HTTPOk
 
 from swift.common.middleware.acl import clean_acl, parse_acl, referrer_allowed
 from swift.common.utils import cache_from_env, get_logger, \
@@ -61,6 +61,9 @@ class TempAuth(object):
 
     See the proxy-server.conf-sample for more information.
 
+    TempAuth supports CORS requests. See
+    http://docs.openstack.org/developer/swift/cors.html.
+
     :param app: The next WSGI app in the pipeline
     :param conf: The dict of configuration values
     """
@@ -89,6 +92,10 @@ class TempAuth(object):
         self.allow_overrides = config_true_value(
             conf.get('allow_overrides', 't'))
         self.storage_url_scheme = conf.get('storage_url_scheme', 'default')
+        self.cors_allow_origin = [
+            a.strip()
+            for a in conf.get('cors_allow_origin', '').split(',')
+            if a.strip()]
         self.users = {}
         for conf_key in conf:
             if conf_key.startswith('user_') or conf_key.startswith('user64_'):
@@ -359,15 +366,55 @@ class TempAuth(object):
         except ValueError:
             self.logger.increment('errors')
             return HTTPNotFound(request=req)
+        req_origin = req.headers.get('Origin', None)
         if version in ('v1', 'v1.0', 'auth'):
             if req.method == 'GET':
-                handler = self.handle_get_token
+                if not req_origin or self.is_origin_allowed(req_origin):
+                    handler = self.handle_get_token
+                else:
+                    return HTTPUnauthorized(request=req)
+            elif req.method == 'OPTIONS':
+                if not req_origin:
+                    # If this isn't a CORS preflight request return a 200
+                    return HTTPOk(request=req)
+                elif (self.is_origin_allowed(req_origin) and
+                      req.headers.get('Access-Control-Request-Method') ==
+                      'GET'):
+                    handler = lambda req: HTTPOk(request=req,
+                                                 headers={'Allow': 'GET'})
+                else:
+                    return HTTPUnauthorized(request=req)
         if not handler:
             self.logger.increment('errors')
             req.response = HTTPBadRequest(request=req)
         else:
             req.response = handler(req)
+        # Inject CORS headers
+        if req_origin:
+            req.response.headers.update(self.cors_headers(req_origin))
         return req.response
+
+    def cors_headers(self, req_origin):
+        """
+        Return a dict of CORS headers relevant for an auth request
+        """
+        allow_headers = ('X-Auth-User, X-Auth-Key, X-Storage-User, '
+                         'X-Storage-Pass')
+        expose_headers = 'X-Auth-Token, X-Storage-Token, X-Storage-Url'
+        return {'Access-Control-Allow-Origin': req_origin,
+                'Access-Control-Allow-Methods': 'GET',
+                'Access-Control-Allow-Headers': allow_headers,
+                'Access-Control-Expose-Headers': expose_headers}
+
+    def is_origin_allowed(self, origin):
+        """
+        Is the given Origin allowed to make requests to this resource
+
+        :param origin: the origin making the request
+        :return: True or False
+        """
+        return origin in self.cors_allow_origin \
+            or '*' in self.cors_allow_origin
 
     def handle_get_token(self, req):
         """

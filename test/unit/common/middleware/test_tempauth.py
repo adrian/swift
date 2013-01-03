@@ -625,6 +625,78 @@ class TestAuth(unittest.TestCase):
         resp = self.test_auth.authorize(req)
         self.assertEquals(resp, None)
 
+    def test_cors_options_no_origin(self):
+        req = self._make_request('/auth/v1.0',
+                                 headers={'X-Auth-User': 'test:tester',
+                                          'X-Auth-Key': 'testing'})
+        req.method = 'OPTIONS'
+        resp = req.get_response(self.test_auth)
+        self.assertEquals(resp.status_int, 200)
+
+    def test_cors_options_invalid_origin(self):
+        req = self._make_request('/auth/v1.0',
+                                 headers={'X-Auth-User': 'test:tester',
+                                          'X-Auth-Key': 'testing',
+                                          'Origin': 'http://foo.com'})
+        req.method = 'OPTIONS'
+        resp = req.get_response(self.test_auth)
+        self.assertEquals(resp.status_int, 401)
+
+    def test_cors_options_valid_origin(self):
+        auth_filter = auth.filter_factory({
+            'cors_allow_origin': 'http://foo.com'
+        })(FakeApp())
+        req = self._make_request('/auth/v1.0',
+                                 headers={'X-Auth-User': 'test:tester',
+                                          'X-Auth-Key': 'testing',
+                                          'Origin': 'http://foo.com',
+                                          'Access-Control-Request-Method':
+                                          'GET'})
+        req.method = 'OPTIONS'
+        resp = req.get_response(auth_filter)
+        self.assertEquals(resp.status_int, 200)
+        self.assertEquals(resp.headers['Access-Control-Allow-Origin'],
+                          'http://foo.com')
+        self.assertEquals(resp.headers['Access-Control-Allow-Methods'], 'GET')
+        self.assertEquals(resp.headers['Access-Control-Allow-Headers'],
+                          ('X-Auth-User, X-Auth-Key, X-Storage-User, '
+                           'X-Storage-Pass'))
+        self.assertEquals(resp.headers['Access-Control-Expose-Headers'],
+                          'X-Auth-Token, X-Storage-Token, X-Storage-Url')
+
+    def test_cors_actual_request(self):
+        auth_filter = auth.filter_factory({
+            'cors_allow_origin': 'http://foo.com',
+            'user_test_tester': 'testing'
+        })(FakeApp())
+        req = self._make_request('/auth/v1.0',
+                                 headers={'X-Auth-User': 'test:tester',
+                                          'X-Auth-Key': 'testing',
+                                          'Origin': 'http://foo.com'})
+        req.method = 'GET'
+        resp = req.get_response(auth_filter)
+        self.assertEquals(resp.status_int, 200)
+        self.assertEquals(resp.headers['Access-Control-Allow-Origin'],
+                          'http://foo.com')
+        self.assertEquals(resp.headers['Access-Control-Allow-Methods'], 'GET')
+        self.assertEquals(resp.headers['Access-Control-Allow-Headers'],
+                          ('X-Auth-User, X-Auth-Key, X-Storage-User, '
+                           'X-Storage-Pass'))
+        self.assertEquals(resp.headers['Access-Control-Expose-Headers'],
+                          'X-Auth-Token, X-Storage-Token, X-Storage-Url')
+        self.assertTrue(resp.headers['X-Auth-Token'] is not None)
+        self.assertTrue(resp.headers['X-Storage-Url'] is not None)
+
+    def test_cors_actual_request_invalid_origin(self):
+        auth_filter = auth.filter_factory({
+            'cors_allow_origin': 'http://foo.com'
+        })(FakeApp())
+        req = self._make_request('/auth/v1.0',
+                                 headers={'Origin': 'http://bar.com'})
+        req.method = 'GET'
+        resp = req.get_response(auth_filter)
+        self.assertEquals(resp.status_int, 401)
+
 
 class TestParseUserCreation(unittest.TestCase):
     def test_parse_user_creation(self):
